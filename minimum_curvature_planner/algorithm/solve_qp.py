@@ -1,4 +1,5 @@
 import cvxpy
+from import_cp import cp
 from perception_data import Centreline
 from matrices import matrices_H_f
 
@@ -13,6 +14,14 @@ def solve_for_alpha(centreline: Centreline):
 
     # Define and solve the CVXPY problem.
     P = (P+P.T)/2
+
+    import numpy
+    if not isinstance(P, numpy.ndarray):
+        P = cp.asnumpy(P)
+        q = cp.asnumpy(q)
+        alpha_max = cp.asnumpy(alpha_max)
+        alpha_min = cp.asnumpy(alpha_min)
+
     prob = cvxpy.Problem(cvxpy.Minimize((1/2)*cvxpy.quad_form(alpha, cvxpy.psd_wrap(P)) + q.T @ alpha),
                     [alpha <= alpha_max,
                     alpha >= alpha_min])
@@ -24,4 +33,4 @@ def solve_for_alpha(centreline: Centreline):
     # print(alpha.value)
     # print("A dual solution corresponding to the inequality constraints is")
     # print(prob.constraints[0].dual_value)
-    return alpha.value
+    return cp.array(alpha.value)
