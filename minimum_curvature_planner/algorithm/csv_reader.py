@@ -1,5 +1,5 @@
 import csv
-import numpy as np
+from import_cp import cp
 from perception_data import Centreline
 
 def centreline_from_csv(vehicle_width, file_path, delimiter=',', quotechar='"', encoding='utf-8'):
@@ -10,7 +10,7 @@ def centreline_from_csv(vehicle_width, file_path, delimiter=',', quotechar='"', 
             for i in range(len(data)):
                 if (data[i][0][0] == '#'): continue
                 data[i] = [float(x) for x in data[i]]
-                data = np.array(data[i:len(data)], dtype=np.float64)
+                data = cp.array(data[i:len(data)], dtype=cp.float32)
                 break
             centreline = Centreline(len(data), data[:, 0:2], data[:, 2], vehicle_width)
             return centreline
