@@ -17,6 +17,12 @@ def coords_deg2(t, a, b, c):
     t_frac = t - t_floor
     return np.array([ (a[I] + b[I]*f + c[I]*f**2) for i in range(t.shape[0]) if (I := (t_floor[i])%(a.shape[0]), f := t_frac[i]) ])
 
+def coords_not_loop(t, a, b, c, d):
+    t_floor = np.int32(t)
+    result = a + b * t + c * t**2 + d * t**3
+    
+    return result
+
 def implemented_visualize_splines(points: np.ndarray, line_label: str, points_label: str, show_control_points: bool = False, dashed: bool = False):
     Ainv = matAInv(points.shape[0])
     centreline = Centreline(points.shape[0], points, None, None)
@@ -67,6 +73,40 @@ def implemented_visualize_splines_deg2(points: np.ndarray, line_label: str, poin
     # Evaluate the splines to get the points on the curve
     x_fine = coords_deg2(t_fine, abc_x[:, 0], abc_x[:, 1], abc_x[:, 2])
     y_fine = coords_deg2(t_fine, abc_y[:, 0], abc_y[:, 1], abc_y[:, 2])
+
+    # Plot the parametric spline
+    if dashed: plt.plot(x_fine, y_fine, '--', label=line_label)
+    else: plt.plot(x_fine, y_fine, label=line_label)
+    if show_control_points: plt.plot(x_points, y_points, 'o', label=points_label)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')  # Ensure the x and y axes have the same scale
+
+def x0xf_visualize_splines(points: np.ndarray, line_label: str, points_label: str, refspline: np.ndarray, show_control_points: bool = False, dashed: bool = False):
+    
+    point0 = points[0]
+    pointf = points[1]
+    
+    abcd_x = get_from_refspline(x0=point0[0], xf=pointf[0], refspline=refspline)
+    abcd_y = get_from_refspline(x0=point0[1], xf=pointf[1], refspline=refspline)
+
+    # Define the parametric points (x and y coordinates)
+    t_points = np.arange(points.shape[0])
+    x_points = np.array(points[:, 0])
+    y_points = np.array(points[:, 1])
+
+    # Generate values of t for plotting the spline
+    # t_fine = np.linspace(t_points[0], t_points[-1] + 1, 1000)
+    t_fine = np.linspace(0, 1, int(100*(abs(point0[0]-pointf[0]) + abs(point0[1]-pointf[1]))))
+    print(t_fine.shape)
+
+    print(abcd_x, abcd_y)
+
+    # Evaluate the splines to get the points on the curve
+    x_fine = coords_not_loop(t_fine, abcd_x[:, 0], abcd_x[:, 1], abcd_x[:, 2], abcd_x[:, 3])
+    y_fine = coords_not_loop(t_fine, abcd_y[:, 0], abcd_y[:, 1], abcd_y[:, 2], abcd_y[:, 3])
 
     # Plot the parametric spline
     if dashed: plt.plot(x_fine, y_fine, '--', label=line_label)
@@ -162,46 +202,49 @@ def plot_tangents(ax, track):
     ax.quiver(track.track_centers[random_samples, 0], track.track_centers[random_samples, 1], track.track_normals[random_samples, 0], track.track_normals[random_samples, 1], color='g')
 
 if __name__ == "__main__":
-    waypoints_csv = pandas.read_csv('Hockenheim_waypoints.csv')
-    points = waypoints_csv.values
-    centreline = Centreline(points.shape[0], points, 1.1*np.ones(points.shape[0]), 0.2)
-
-    Ainv = matAInv(centreline.N)
-    A_ex_c = A_ex_comp(centreline.N, 2)
-    q_x = q_comp(centreline, 0)
-    q_y = q_comp(centreline, 1)
-    x_d = first_derivatives(centreline, Ainv, q_x) # vector containing x_i'
-    y_d = first_derivatives(centreline, Ainv, q_y) # vector containing y_i'
-
-    centreline.calc_n(x_d, y_d)
-
-    points_centreline = centreline.p
-    points_boundary_max = centreline.p + centreline.n * np.repeat(centreline.half_w_tr, 2, axis=0).reshape((-1, 2)) 
-    points_boundary_min = centreline.p - centreline.n * np.repeat(centreline.half_w_tr, 2, axis=0).reshape((-1, 2))
-
-    
-
-    
-
-    alpha = solve_for_alpha(centreline)
-
-    # alpha = solve_for_alpha_deg2(centreline)
-    # alpha = solve_for_alpha_deg2_not_pseudo(centreline)
-
-
-    points_racelines = centreline.p + centreline.n * np.repeat(alpha, 2, axis=0).reshape((-1, 2)) 
-
-    plt.figure(figsize=(10, 10))
-    plt.title('Minimum Curvature Plan')
-    implemented_visualize_splines(centreline.p, 'Centreline from implementation', 'Control Points: Centreline from implementation', dashed=True)
-    implemented_visualize_splines(points_boundary_max, 'Outer boundary from implementation', 'Control Points: Outer boundary from implementation')
-    implemented_visualize_splines(points_boundary_min, 'Inner boundary from implementation', 'Control Points: Inner boundary from implementation')
-    implemented_visualize_splines(points_racelines, 'Raceline from implementation', 'Control Points: Raceline from implementation')
-
-    # implemented_visualize_splines_deg2(centreline.p, 'Centreline from implementation', 'Control Points: Centreline from implementation', dashed=True)
-    # implemented_visualize_splines_deg2(points_boundary_max, 'Outer boundary from implementation', 'Control Points: Outer boundary from implementation')
-    # implemented_visualize_splines_deg2(points_boundary_min, 'Inner boundary from implementation', 'Control Points: Inner boundary from implementation')
-    # implemented_visualize_splines_deg2(points_racelines, 'Raceline from implementation', 'Control Points: Raceline from implementation')
-    # track = Splined_Track(points_centreline, 1.1)
-    # points_raceline = Splined_Track(points_centreline, 1.1)
+    plt.title('refpline for DP')
+    x0xf_visualize_splines(np.array([[0, 1], [6, -8.78]]), 'Parametric Spline: from implementation', 'Control Points', [-1, 16, -5.8, -2])
     plt.show()
+    # waypoints_csv = pandas.read_csv('Hockenheim_waypoints.csv')
+    # points = waypoints_csv.values
+    # centreline = Centreline(points.shape[0], points, 1.1*np.ones(points.shape[0]), 0.2)
+
+    # Ainv = matAInv(centreline.N)
+    # A_ex_c = A_ex_comp(centreline.N, 2)
+    # q_x = q_comp(centreline, 0)
+    # q_y = q_comp(centreline, 1)
+    # x_d = first_derivatives(centreline, Ainv, q_x) # vector containing x_i'
+    # y_d = first_derivatives(centreline, Ainv, q_y) # vector containing y_i'
+
+    # centreline.calc_n(x_d, y_d)
+
+    # points_centreline = centreline.p
+    # points_boundary_max = centreline.p + centreline.n * np.repeat(centreline.half_w_tr, 2, axis=0).reshape((-1, 2)) 
+    # points_boundary_min = centreline.p - centreline.n * np.repeat(centreline.half_w_tr, 2, axis=0).reshape((-1, 2))
+
+    
+
+    
+
+    # alpha = solve_for_alpha(centreline)
+
+    # # alpha = solve_for_alpha_deg2(centreline)
+    # # alpha = solve_for_alpha_deg2_not_pseudo(centreline)
+
+
+    # points_racelines = centreline.p + centreline.n * np.repeat(alpha, 2, axis=0).reshape((-1, 2)) 
+
+    # plt.figure(figsize=(10, 10))
+    # plt.title('Minimum Curvature Plan')
+    # implemented_visualize_splines(centreline.p, 'Centreline from implementation', 'Control Points: Centreline from implementation', dashed=True)
+    # implemented_visualize_splines(points_boundary_max, 'Outer boundary from implementation', 'Control Points: Outer boundary from implementation')
+    # implemented_visualize_splines(points_boundary_min, 'Inner boundary from implementation', 'Control Points: Inner boundary from implementation')
+    # implemented_visualize_splines(points_racelines, 'Raceline from implementation', 'Control Points: Raceline from implementation')
+
+    # # implemented_visualize_splines_deg2(centreline.p, 'Centreline from implementation', 'Control Points: Centreline from implementation', dashed=True)
+    # # implemented_visualize_splines_deg2(points_boundary_max, 'Outer boundary from implementation', 'Control Points: Outer boundary from implementation')
+    # # implemented_visualize_splines_deg2(points_boundary_min, 'Inner boundary from implementation', 'Control Points: Inner boundary from implementation')
+    # # implemented_visualize_splines_deg2(points_racelines, 'Raceline from implementation', 'Control Points: Raceline from implementation')
+    # # track = Splined_Track(points_centreline, 1.1)
+    # # points_raceline = Splined_Track(points_centreline, 1.1)
+    # plt.show()

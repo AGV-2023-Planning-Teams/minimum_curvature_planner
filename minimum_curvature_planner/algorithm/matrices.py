@@ -71,6 +71,51 @@ def matAInv(N: np.int32):
     A_inv[np.isclose(A_inv, 0, atol=1e-15)] = 0
     return A_inv
 
+def get_from_refspline(x0, xf, refspline: np.ndarray):
+    '''
+    refspline[0] = a1
+    refspline[1] = b1
+    refspline[2] = c1
+    refspline[3] = d1
+    '''
+    A = np.zeros((4, 4), dtype=np.float64)
+    
+    # Fill the matrix using vectorized operations
+
+    # Equation: a = x0
+    A[0, 0] = 1
+
+    # Equation: a + b + c + d = xf
+    A[1, 0] = 1
+    A[1, 1] = 1
+    A[1, 2] = 1
+    A[1, 3] = 1
+    
+    # Equation: b + 2c = b1
+    A[2, 0] = 0
+    A[2, 1] = 1
+    A[2, 2] = 2
+    A[2, 3] = 0
+    
+    # Equation: 2c + 6d = 2c1
+    A[3, 0] = 0
+    A[3, 1] = 0
+    A[3, 2] = 2
+    A[3, 3] = 6
+    
+    A_inv = np.linalg.inv(A)
+    A_inv[np.isclose(A_inv, 0, atol=1e-15)] = 0
+
+    q = np.zeros(4, dtype=np.float64)
+    q[0] = x0
+    q[1] = xf
+    q[2] = refspline[1]
+    q[3] = 2*refspline[2]
+
+    abcd = (A_inv @ q).reshape((-1, 4))
+
+    return abcd
+
 def A_ex_comp(N: np.int32, component: np.int32):
     A_ex = np.zeros((N, 4*N), dtype=np.float64)
     indices = np.arange(N)
