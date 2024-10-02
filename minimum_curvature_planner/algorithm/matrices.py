@@ -5,10 +5,6 @@ This file contains functions for generating the various Matrices described in th
 from perception_data import Centreline
 import numpy as np
 
-import jax.numpy as jnp
-import jax
-from jax import jit 
-
 # def matAInv(N: np.int32):
 #     A = np.zeros((4*N, 4*N))
 #     for i in range(0, 4*N, 4):
