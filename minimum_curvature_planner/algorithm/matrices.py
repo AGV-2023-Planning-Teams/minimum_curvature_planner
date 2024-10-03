@@ -3,11 +3,9 @@ This file contains functions for generating the various Matrices described in th
 """
 
 from perception_data import Centreline
-import numpy as np
+from numba import cuda
 
-import jax.numpy as jnp
-import jax
-from jax import jit 
+from import_cp import cp
 
 # def matAInv(N: np.int32):
 #     A = np.zeros((4*N, 4*N))
@@ -41,78 +39,100 @@ from jax import jit
 #     A_inv[np.isclose(A_inv, 0, atol=1e-15)] = 0
 #     return A_inv
 
-def matAInv(N: np.int32):
-    A = np.zeros((4*N, 4*N))
-    
-    # Fill the matrix using vectorized operations
-    indices = np.arange(0, 4*N, 4)
-    A[indices, indices] = 1
-    
-    indices = np.arange(1, 4*N, 4)
-    A[indices, indices-1] = 1
-    A[indices, indices] = 1
-    A[indices, indices+1] = 1
-    A[indices, indices+2] = 1
-    
-    indices = np.arange(2, 4*N, 4)
-    addr_A_N_1 = (indices + 4*N - 6) % (4*N)
-    A[indices, indices-1] = -1
-    A[indices, addr_A_N_1 + 1] = 1
-    A[indices, addr_A_N_1 + 2] = 2
-    A[indices, addr_A_N_1 + 3] = 3
-    
-    indices = np.arange(3, 4*N, 4)
-    addr_A_N_1 = (indices + 4*N - 7) % (4*N)
-    A[indices, indices-1] = -2
-    A[indices, addr_A_N_1 + 2] = 2
-    A[indices, addr_A_N_1 + 3] = 6
-    
-    A_inv = np.linalg.inv(A)
-    A_inv[np.isclose(A_inv, 0, atol=1e-15)] = 0
+@cuda.jit
+def fill_A(A: cp.ndarray, N: cp.uint32) -> None:
+    i, j = cuda.grid(2)
+    if i < 4*N and j < 4*N:
+        if (i % 4 == 0):
+            if j == i: val = 1
+            else: val = 0
+        elif (i % 4 == 1):
+            if j == i-1: val = 1
+            elif j == i: val = 1
+            elif j == i+1: val = 1
+            elif j == i+2: val = 1
+            else: val = 0
+        elif (i % 4 == 2):
+            addr_A_N_1 = (i + 4*N - 6) % (4*N)
+            if j == i-1: val = -1
+            elif j == addr_A_N_1 + 1: val = 1
+            elif j == addr_A_N_1 + 2: val = 2
+            elif j == addr_A_N_1 + 3: val = 3
+            else: val = 0
+        elif (i % 4 == 3):
+            addr_A_N_1 = (i + 4*N - 7) % (4*N)
+            if j == i-1: val = -2
+            elif j == addr_A_N_1 + 2: val = 2
+            elif j == addr_A_N_1 + 3: val = 6
+            else: val = 0
+        A[i, j] = val
+
+def matAInv(N: cp.uint32) -> cp.ndarray:
+    A = cp.zeros((4*N, 4*N), dtype=cp.float32)
+    fill_A[((4*N+31)//32, (4*N+31)//32), (32, 32)](A, N)
+    A_inv = cp.linalg.inv(A)
+    A_inv[cp.isclose(A_inv, 0, atol=1e-15)] = 0
     return A_inv
 
-def A_ex_comp(N: np.int32, component: np.int32):
-    A_ex = np.zeros((N, 4*N), dtype=np.float64)
-    indices = np.arange(N)
-    A_ex[indices, 4*indices + component] = 1
+@cuda.jit
+def fill_A_ex_comp(A_ex_comp: cp.ndarray, N: cp.uint32, component: cp.uint32) -> None:
+    i, j = cuda.grid(2)
+    if i < N and j < 4*N: A_ex_comp[i, j] = (j == 4*i + component)
+
+def A_ex_comp(N: cp.uint32, component: cp.uint32) -> cp.ndarray:
+    A_ex = cp.ndarray((N, 4*N), dtype=cp.float32)
+    fill_A_ex_comp[((N+31)//32, (4*N+31)//32), (32, 32)](A_ex, N, component)
     return A_ex
 
+@cuda.jit
+def fill_q_comp(q: cp.ndarray, p: cp.ndarray, component: cp.uint32) -> None:
+    N = p.shape[0]
+    i = cuda.grid(1)
+    if i < 4*N:
+        if (i % 4 == 0): q[i] = p[i//4, component]
+        elif (i % 4 == 1): q[i] = p[(i//4 + 1) % N, component]
+        elif (i % 4 == 2) or (i % 4 == 3): q[i] = 0
 
-def q_comp(centreline, component: np.int32):
+def q_comp(centreline: Centreline, component: cp.int32) -> cp.ndarray:
     N = centreline.N
-    q = np.zeros(4 * N, dtype=np.float64)
-    indices = np.arange(N)
-    q[4 * indices] = centreline.p[indices, component]
-    q[4 * indices + 1] = centreline.p[(indices + 1) % N, component]
-    
+    q = cp.ndarray(4 * N, dtype=cp.float32)
+    fill_q_comp[(4*N+31)//32, 32](q, centreline.p, component)
     return q
 
+@cuda.jit
+def fill_M_comp(M: cp.ndarray, n: cp.ndarray, component: cp.int32) -> None:
+    N = n.shape[0]
+    i, j = cuda.grid(2)
+    if i < 4*N and j < N:
+        if (i % 4 == 0):
+            M[i, j] = (n[j, component] if (j == i//4) else 0)
+        if (i % 4 == 1):
+            M[i, j] = (n[j, component] if (j == (i//4 + 1)%N) else 0)
+        if (i % 4 == 2) or (i % 4 == 3):
+            M[i, j] = 0
 
-def M_comp(centreline, component: np.int32):
+def M_comp(centreline: Centreline, component: cp.int32):
     N = centreline.N
-    M = np.zeros((4 * N, N), dtype=np.float64)
-    indices = np.arange(N)
-    M[4 * indices, indices] = centreline.n[indices, component]
-    M[4 * indices + 1, (indices + 1) % N] = centreline.n[(indices + 1) % N, component]
+    M = cp.ndarray((4 * N, N), dtype=cp.float32)
+    fill_M_comp[((4*N+31)//32, (N+31)//32), (32, 32)](M, centreline.n, component)
     
     return M
 
-def first_derivatives(centreline: Centreline, Ainv: np.ndarray, q: np.ndarray):
+def first_derivatives(centreline: Centreline, Ainv: cp.ndarray, q: cp.ndarray):
     A_ex_b = A_ex_comp(centreline.N, 1)
     return A_ex_b @ Ainv @ q
-import numpy as np
 
-def matPxx(x_dashed: np.ndarray, y_dashed: np.ndarray):
+def matPxx(x_dashed: cp.ndarray, y_dashed: cp.ndarray):
     values = y_dashed**2 / (x_dashed**2 + y_dashed**2)**3
-    return np.diag(values)
+    return cp.diag(values)
 
-def matPxy(x_dashed: np.ndarray, y_dashed: np.ndarray):
+def matPxy(x_dashed: cp.ndarray, y_dashed: cp.ndarray):
     values = -2 * x_dashed * y_dashed / (x_dashed**2 + y_dashed**2)**3
-    return np.diag(values)
+    return cp.diag(values)
 
-def matPyy(x_dashed: np.ndarray, y_dashed: np.ndarray):
+def matPyy(x_dashed: cp.ndarray, y_dashed: cp.ndarray):
     values = x_dashed**2 / (x_dashed**2 + y_dashed**2)**3
-    return np.diag(values)
+    return cp.diag(values)
 
 def matrices_H_f(centreline: Centreline):
     # returns a tuple of the matrices H and f that define the QP

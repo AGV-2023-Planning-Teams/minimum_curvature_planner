@@ -1,9 +1,11 @@
 import csv
 import json
 import numpy as np
+from import_cp import cp
 from perception_data import Centreline
 
-def export_solution(points: np.ndarray, output_path: str, format: str = 'csv'):
+def export_solution(points: cp.ndarray, output_path: str, format: str = 'csv'):
+    if not isinstance(points, np.ndarray): points = cp.asnumpy(points)
     if format == 'csv':
         with open(output_path, mode='w', newline='') as file:
             writer = csv.writer(file)
