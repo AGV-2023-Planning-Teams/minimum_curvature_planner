@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
-from matrices import *
+from perception_data import *
 
 def matplotlib_visualize_splines(points: np.ndarray, line_label: str, points_label: str, is_loop: bool = False):
     if is_loop:

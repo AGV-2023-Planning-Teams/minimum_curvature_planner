@@ -1,6 +1,5 @@
 import cvxpy as cp
-from perception_data import Centreline
-from matrices import matrices_H_f
+from perception_data import *
 
 def solve_for_alpha(centreline: Centreline):
     P, q = matrices_H_f(centreline)
